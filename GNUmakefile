@@ -68,12 +68,12 @@ all: $(SHARED) $(STATIC)
 
 $(SHARED): $(OBJS)
 	@echo "  LD      $@"
-	@$(LD) $(LFLAGS) $(SH_LFLAGS) $^ $(LIBS) -o $@
+	$(LD) $(LFLAGS) $(SH_LFLAGS) $^ $(LIBS) -o $@
 
 
 $(STATIC): $(OBJS)
 	@echo "  AR      $@"
-	@$(AR) $(AFLAGS) $@ $^
+	$(AR) $(AFLAGS) $@ $^
 ifneq ($(RANLIB),)
 	@$(RANLIB) $@
 endif
@@ -94,7 +94,7 @@ libre.pc:
 
 $(BUILD)/%.o: src/%.c $(BUILD) Makefile $(MK) $(MODMKS)
 	@echo "  CC      $@"
-	@$(CC) $(CFLAGS) -c $< -o $@ $(DFLAGS)
+	$(CC) $(CFLAGS) -c $< -o $@ $(DFLAGS)
 
 
 $(BUILD): Makefile $(MK) $(MODMKS)
@@ -104,7 +104,7 @@ $(BUILD): Makefile $(MK) $(MODMKS)
 
 .PHONY: clean
 clean:
-	@rm -rf $(SHARED) $(STATIC) libre.pc test.d test.o test $(BUILD)
+	rm -rf $(SHARED) $(STATIC) libre.pc test.d test.o test $(BUILD)
 
 
 install: $(SHARED) $(STATIC) libre.pc
@@ -118,8 +118,8 @@ install: $(SHARED) $(STATIC) libre.pc
 	$(INSTALL) -m 0644 $(MK) $(DESTDIR)$(MKDIR)
 
 uninstall:
-	@rm -rf $(DESTDIR)$(INCDIR)
-	@rm -rf $(DESTDIR)$(MKDIR)
+	rm -rf $(DESTDIR)$(INCDIR)
+	rm -rf $(DESTDIR)$(MKDIR)
 	@rm -f $(DESTDIR)$(LIBDIR)/$(SHARED)
 	@rm -f $(DESTDIR)$(LIBDIR)/$(STATIC)
 	@rm -f $(DESTDIR)$(LIBDIR)/pkgconfig/libre.pc
@@ -128,11 +128,11 @@ uninstall:
 
 test.o:	test.c Makefile $(MK)
 	@echo "  CC      $@"
-	@$(CC) $(CFLAGS) -c $< -o $@ $(DFLAGS)
+	$(CC) $(CFLAGS) -c $< -o $@ $(DFLAGS)
 
 test$(BIN_SUFFIX): test.o $(SHARED) $(STATIC)
 	@echo "  LD      $@"
-	@$(LD) $(LFLAGS) $< -L. -lre $(LIBS) -o $@
+	$(LD) $(LFLAGS) $< -L. -lre $(LIBS) -o $@
 
 sym:	$(SHARED)
 	@nm $(SHARED) | grep " U " | perl -pe 's/\s*U\s+(.*)/$${1}/' \

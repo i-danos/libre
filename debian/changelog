@@ -1,3 +1,15 @@
+libre (1:1.1.0-1vyatta1) unstable; urgency=medium
+
+  * Add epoch 1: trixie's libc6-dev declares "Breaks: libre-dev (<=
+    1.1.0-1+b1)" (a blanket rebuild-required marker for any -dev package
+    predating the current header ABI), which otherwise blocks installing
+    this rebuilt package even though it's freshly compiled against the
+    current headers. The epoch also settles apt's version-preference
+    (previously stock Debian's higher-numbered libre-dev 2.0.1-3 could win
+    over this fork despite the fork being the one repcpd/re_pcp.h needs).
+
+ -- DANOS Build <build@danos.local>  Tue, 11 Aug 2026 00:00:00 +0000
+
 libre (1.1.0-1vyatta1) unstable; urgency=medium
 
   [ Nicholas Brown ]

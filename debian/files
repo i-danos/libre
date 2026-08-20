@@ -1,0 +1,4 @@
+libre-dev_1.1.0-1vyatta1_amd64.deb libdevel optional
+libre0-dbgsym_1.1.0-1vyatta1_amd64.deb debug optional automatic=yes
+libre0_1.1.0-1vyatta1_amd64.deb libs optional
+libre_1.1.0-1vyatta1_amd64.buildinfo comm optional

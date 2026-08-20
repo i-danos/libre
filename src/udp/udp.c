@@ -3,6 +3,7 @@
  *
  * Copyright (C) 2010 Creytiv.com
  */
+#define _GNU_SOURCE 1
 #include <stdlib.h>
 #ifdef HAVE_UNISTD_H
 #include <unistd.h>
@@ -67,6 +68,9 @@ struct udp_sock {
 	bool conn;           /**< Connected socket flag       */
 	size_t rxsz;         /**< Maximum receive chunk size  */
 	size_t rx_presz;     /**< Preallocated rx buffer size */
+	char *pktinfo;       /**< Packet info from last read */
+	size_t pktinfo_sz;   /**< Packet info size */
+	size_t pktinfo_rxsz; /**< Received packet info size */
 };
 
 /** Defines a UDP helper */
@@ -130,6 +134,8 @@ static void udp_destructor(void *data)
 static void udp_read(struct udp_sock *us, int fd)
 {
 	struct mbuf *mb = mbuf_alloc(us->rxsz);
+	struct msghdr msgh;
+	struct iovec iov;
 	struct sa src;
 	struct le *le;
 	int err = 0;
@@ -139,9 +145,18 @@ static void udp_read(struct udp_sock *us, int fd)
 		return;
 
 	src.len = sizeof(src.u);
-	n = recvfrom(fd, BUF_CAST mb->buf + us->rx_presz,
-		     mb->size - us->rx_presz, 0,
-		     &src.u.sa, &src.len);
+	iov.iov_base = BUF_CAST mb->buf + us->rx_presz;
+	iov.iov_len = mb->size - us->rx_presz;
+	memset(&msgh, 0, sizeof(msgh));
+	msgh.msg_name = &src.u.sa;
+	msgh.msg_namelen = src.len;
+	msgh.msg_iov = &iov;
+	msgh.msg_iovlen = 1;
+	msgh.msg_control = us->pktinfo;
+	msgh.msg_controllen = us->pktinfo_sz;
+
+	n = recvmsg(fd, &msgh, 0);
+	us->pktinfo_rxsz = msgh.msg_controllen;
 	if (n < 0) {
 		err = errno;
 
@@ -328,6 +343,23 @@ int udp_listen(struct udp_sock **usp, const struct sa *local,
 			(void)close(fd);
 			continue;
 		}
+
+#if defined (IPPROTO_IPV6) && defined (IPV6_V6ONLY)
+		if (AF_INET6 == r->ai_family) {
+			struct sa sa;
+
+			/* Set v6only before bind to any v6 address */
+			if (0 == sa_set_sa(&sa, r->ai_addr) && sa_is_any(&sa)) {
+				int on = 1;
+				if (0 != setsockopt(fd, IPPROTO_IPV6,
+						    IPV6_V6ONLY,
+						    &on, sizeof(on))) {
+					DEBUG_WARNING("listen: v6only: %m\n",
+						      errno);
+				}
+			}
+		}
+#endif
 
 		if (bind(fd, r->ai_addr, SIZ_CAST r->ai_addrlen) < 0) {
 			err = errno;
@@ -831,6 +863,112 @@ struct udp_helper *udp_helper_find(const struct udp_sock *us, int layer)
 
 		if (layer == uh->layer)
 			return uh;
+	}
+
+	return NULL;
+}
+
+
+/**
+ * Set up UDP socket to receive packet info
+ *
+ * @param us  UDP Socket
+ * @param af  Address Family
+ *
+ * @return 0 if success, otherwise errorcode
+ */
+int udp_set_pktinfo(struct udp_sock *us, int af)
+{
+	int opt = 1;
+	int err = 0;
+
+	if (!us)
+		return EINVAL;
+
+	if (us->pktinfo)
+		mem_deref(us->pktinfo);
+	us->pktinfo = NULL;
+	us->pktinfo_sz = 0;
+
+	switch (af) {
+	case AF_INET:
+#ifdef IP_PKTINFO
+		err = setsockopt(us->fd, IPPROTO_IP, IP_PKTINFO, &opt,
+				 sizeof(opt));
+		if (err)
+			break;
+		us->pktinfo_sz = CMSG_SPACE(sizeof(struct in_pktinfo));
+		us->pktinfo = mem_zalloc(us->pktinfo_sz, NULL);
+		if (!us->pktinfo) {
+			us->pktinfo_sz = 0;
+			err = ENOMEM;
+		}
+#else
+		err = ENOTSUP;
+#endif
+		break;
+
+	case AF_INET6:
+#ifdef IPV6_RECVPKTINFO
+		err = setsockopt((-1 != us->fd6) ? us->fd6 : us->fd,
+				 IPPROTO_IPV6, IPV6_RECVPKTINFO, &opt,
+				 sizeof(opt));
+		if (err)
+			break;
+		us->pktinfo_sz = CMSG_SPACE(sizeof(struct in6_pktinfo));
+		us->pktinfo = mem_zalloc(us->pktinfo_sz, NULL);
+		if (!us->pktinfo) {
+			us->pktinfo_sz = 0;
+			err = ENOMEM;
+		}
+#else
+		err = ENOTSUP;
+#endif
+		break;
+
+	default:
+		err = EINVAL;
+		break;
+	}
+
+	return err;
+}
+
+
+/**
+ * Get packet info for last received message
+ *
+ * @param us  UDP Socket
+ * @param af  Address Family
+ *
+ * @return ptr to packet info or NULL if not there
+ */
+void *udp_get_recv_pktinfo(const struct udp_sock *us, int af)
+{
+	struct cmsghdr *cm;
+	struct msghdr msgh = {
+		.msg_control = us->pktinfo,
+		.msg_controllen = us->pktinfo_rxsz,
+	};
+
+	for (cm = CMSG_FIRSTHDR(&msgh); cm; cm = CMSG_NXTHDR(&msgh, cm)) {
+		switch (af) {
+		case AF_INET:
+#ifdef IP_PKTINFO
+			if (IPPROTO_IP == cm->cmsg_level &&
+			    IP_PKTINFO == cm->cmsg_type)
+				return CMSG_DATA(cm);
+#endif
+			break;
+
+		case AF_INET6:
+#ifdef IPV6_PKTINFO
+			if (IPPROTO_IPV6 == cm->cmsg_level &&
+			    IPV6_PKTINFO == cm->cmsg_type)
+				return CMSG_DATA(cm);
+#endif
+			break;
+		}
 	}
 
 	return NULL;
