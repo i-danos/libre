@@ -6,7 +6,17 @@ export DEB_BUILD_MAINT_OPTIONS = hardening=+all
 export CC
 
 EXTRA_LFLAGS:="$(shell dpkg-buildflags --get LDFLAGS) -Wl,-soname,libre.so.0"
-EXTRA_CFLAGS:="$(shell dpkg-buildflags --get CPPFLAGS)"
+# upstream mk/re.mk appends -std=c99 (strict ISO C, not gnu99), which hides
+# POSIX symbols. With hardening=+all above, _FORTIFY_SOURCE pulls in glibc's
+# bits/stdio2.h, whose fread_unlocked inline calls getc_unlocked:
+#
+#     bits/stdio2.h: In function 'fread_unlocked':
+#     error: implicit declaration of function 'getc_unlocked';
+#       did you mean 'fgetc_unlocked'? [-Wimplicit-function-declaration]
+#
+# GCC 14 promotes implicit declarations to errors. _DEFAULT_SOURCE exposes the
+# POSIX declarations without giving up -std=c99.
+EXTRA_CFLAGS:="$(shell dpkg-buildflags --get CPPFLAGS) -D_DEFAULT_SOURCE"
 
 # relax symbols check when targeting experimental
 EXP_RELEASE = $(filter experimental% UNRELEASED,\
